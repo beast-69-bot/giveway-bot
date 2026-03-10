@@ -24,6 +24,7 @@ def init_db():
             winners_count   INTEGER NOT NULL DEFAULT 1,
             min_threshold   INTEGER NOT NULL DEFAULT 0,
             secret_prize    TEXT,
+            tutorial_link   TEXT,
             status          TEXT    NOT NULL DEFAULT 'active',
             created_at      TEXT    NOT NULL,
             end_time        TEXT    NOT NULL
@@ -65,21 +66,24 @@ def init_db():
             c.execute("ALTER TABLE entries ADD COLUMN is_winner INTEGER NOT NULL DEFAULT 0")
         except sqlite3.OperationalError:
             pass
+        try:
+            c.execute("ALTER TABLE giveaways ADD COLUMN tutorial_link TEXT")
+        except sqlite3.OperationalError:
+            pass
 
 
 # ── Giveaways ────────────────────────────────
 
 def create_giveaway(prize, repo_url, winners_count, min_threshold,
-                    secret_prize, created_at, end_time) -> int:
+                    secret_prize, tutorial_link, created_at, end_time) -> int:
     with get_conn() as c:
-        cur = c.execute(
-            "INSERT INTO giveaways "
-            "(prize, repo_url, winners_count, min_threshold, secret_prize, created_at, end_time) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (prize, repo_url, winners_count, min_threshold,
-             secret_prize, created_at, end_time)
+        cursor = c.execute(
+            """INSERT INTO giveaways 
+               (prize, repo_url, winners_count, min_threshold, secret_prize, tutorial_link, created_at, end_time)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (prize, repo_url, winners_count, min_threshold, secret_prize, tutorial_link, created_at, end_time)
         )
-        return cur.lastrowid
+        return cursor.lastrowid
 
 
 def get_active_giveaway():
@@ -95,6 +99,13 @@ def get_latest_giveaway():
         return c.execute(
             "SELECT * FROM giveaways ORDER BY id DESC LIMIT 1"
         ).fetchone()
+
+def update_giveaway_field(gid: int, field: str, value: str):
+    allowed_fields = {"prize", "repo_url", "tutorial_link", "secret_prize"}
+    if field not in allowed_fields:
+        return
+    with get_conn() as c:
+        c.execute(f"UPDATE giveaways SET {field} = ? WHERE id = ?", (value, gid))
 
 
 def get_giveaway(gid: int):
@@ -210,11 +221,20 @@ def add_referral(gid: int, referrer_id: int, referred_id: int, created_at: str) 
     except sqlite3.IntegrityError:
         return False
 
+def get_referrer(gid: int, referred_id: int):
+    with get_conn() as c:
+        r = c.execute(
+            "SELECT referrer_id FROM referrals WHERE giveaway_id = ? AND referred_id = ?",
+            (gid, referred_id)
+        ).fetchone()
+        return r["referrer_id"] if r else None
 
 def count_referrals(gid: int, referrer_id: int) -> int:
     with get_conn() as c:
         r = c.execute(
-            "SELECT COUNT(*) FROM referrals WHERE giveaway_id = ? AND referrer_id = ?",
+            """SELECT COUNT(*) FROM referrals r
+               JOIN entries e ON r.referred_id = e.user_id AND r.giveaway_id = e.giveaway_id
+               WHERE r.giveaway_id = ? AND r.referrer_id = ? AND e.status = 'approved'""",
             (gid, referrer_id)
         ).fetchone()
         return r[0] if r else 0
@@ -223,13 +243,14 @@ def count_referrals(gid: int, referrer_id: int) -> int:
 def get_referral_leaderboard(gid: int, limit: int = 10):
     with get_conn() as c:
         return c.execute(
-            """SELECT referrer_id,
+            """SELECT r.referrer_id,
                       COUNT(*) as ref_count,
                       (SELECT telegram_username FROM entries
                        WHERE giveaway_id = r.giveaway_id AND user_id = r.referrer_id) as uname
                FROM referrals r
-               WHERE giveaway_id = ?
-               GROUP BY referrer_id
+               JOIN entries e ON r.referred_id = e.user_id AND r.giveaway_id = e.giveaway_id
+               WHERE r.giveaway_id = ? AND e.status = 'approved'
+               GROUP BY r.referrer_id
                ORDER BY ref_count DESC
                LIMIT ?""",
             (gid, limit)
@@ -240,10 +261,11 @@ def get_secret_prize_eligible(gid: int, threshold: int):
     """Users with referrals >= threshold"""
     with get_conn() as c:
         return c.execute(
-            """SELECT referrer_id, COUNT(*) as ref_count
-               FROM referrals
-               WHERE giveaway_id = ?
-               GROUP BY referrer_id
+            """SELECT r.referrer_id, COUNT(*) as ref_count
+               FROM referrals r
+               JOIN entries e ON r.referred_id = e.user_id AND r.giveaway_id = e.giveaway_id
+               WHERE r.giveaway_id = ? AND e.status = 'approved'
+               GROUP BY r.referrer_id
                HAVING ref_count >= ?""",
             (gid, threshold)
         ).fetchall()
@@ -285,7 +307,10 @@ def get_analytics(gid: int) -> dict:
     rejected  = count_by_status(gid, "rejected")
     with get_conn() as c:
         ref_total = c.execute(
-            "SELECT COUNT(*) FROM referrals WHERE giveaway_id = ?", (gid,)
+            """SELECT COUNT(*) FROM referrals r
+               JOIN entries e ON r.referred_id = e.user_id AND r.giveaway_id = e.giveaway_id
+               WHERE r.giveaway_id = ? AND e.status = 'approved'""",
+            (gid,)
         ).fetchone()[0]
     return {
         "approved":  approved,

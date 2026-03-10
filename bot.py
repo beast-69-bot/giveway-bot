@@ -123,7 +123,8 @@ def time_left(end_time_iso: str) -> str:
 
 def kb_admin_dashboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("➕ New Campaign",      callback_data="admin:new")],
+        [InlineKeyboardButton("➕ New Campaign",      callback_data="admin:new"),
+         InlineKeyboardButton("✏️ Edit Campaign",     callback_data="admin:edit")],
         [InlineKeyboardButton("📊 Live Analytics",   callback_data="admin:analytics"),
          InlineKeyboardButton("👥 Participants",     callback_data="admin:participants")],
         [InlineKeyboardButton("📣 Broadcast",        callback_data="admin:broadcast"),
@@ -190,19 +191,13 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         active["id"], referrer_id, user.id, utcnow().isoformat()
                     )
                     if added:
-                        ref_count = db.count_referrals(active["id"], referrer_id)
-                        # Update priority boost
-                        if ref_count >= REFERRAL_PRIORITY_THRESHOLD:
-                            db.set_priority_boost(active["id"], referrer_id, 1)
                         try:
                             await ctx.bot.send_message(
                                 chat_id=referrer_id,
                                 text=(
-                                    f"🎉 *New Referral\\!*\n\n"
-                                    f"👤 {esc(user.full_name)} ne tera referral link use kiya\\!\n"
-                                    f"📊 Total referrals: *{esc(ref_count)}*\n"
-                                    + (f"\n⚡ *Priority Boost activated\\!* \\(5\\+ referrals\\)" if ref_count == REFERRAL_PRIORITY_THRESHOLD else "")
-                                    + (f"\n🏆 *Secret Prize eligible\\!* \\(10\\+ referrals\\)" if ref_count == REFERRAL_SECRET_THRESHOLD else "")
+                                    f"👀 *Referral Link Clicked\\!*\n\n"
+                                    f"👤 {esc(user.full_name)} ne tera link use kiya hai\\.\n"
+                                    f"_Agar wo successfully campaign join karte hain, toh tera referral count badh jayega\\._"
                                 ),
                                 parse_mode=ParseMode.MARKDOWN_V2,
                             )
@@ -377,6 +372,10 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     # ── Back ──
     elif action == "back":
+        ctx.user_data.pop("awaiting_broadcast", None)
+        ctx.user_data.pop("awaiting_ban", None)
+        ctx.user_data.pop("awaiting_unban", None)
+        ctx.user_data.pop("awaiting_edit", None)
         active = db.get_active_giveaway()
         if active:
             stats = db.get_analytics(active["id"])
@@ -444,6 +443,36 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data["awaiting_unban"] = True
         await query.edit_message_text(
             "✅ *Unban User*\n\nUser ka Telegram ID bhejo\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🚫 Cancel", callback_data="admin:back")]])
+        )
+
+    # ── Edit Campaign ──
+    elif action == "edit":
+        active = db.get_active_giveaway()
+        if not active:
+            await query.answer("No active campaign to edit.", show_alert=True)
+            return
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🎁 Prize", callback_data="admin:edit_prize"),
+             InlineKeyboardButton("🔗 Repo", callback_data="admin:edit_repo")],
+            [InlineKeyboardButton("📹 Tutorial", callback_data="admin:edit_tut")],
+            [InlineKeyboardButton("🔙 Back", callback_data="admin:back")]
+        ])
+        await query.edit_message_text(
+            "✏️ *Edit Active Campaign*\n\nKya update karna chahte ho?",
+            parse_mode=ParseMode.MARKDOWN_V2,
+            reply_markup=kb
+        )
+
+    elif action.startswith("edit_"):
+        field = action.split("_")[1]
+        field_map = {"prize": "Prize", "repo": "Repo URL", "tut": "Tutorial Link"}
+        db_col = {"prize": "prize", "repo": "repo_url", "tut": "tutorial_link"}
+        
+        ctx.user_data["awaiting_edit"] = db_col[field]
+        await query.edit_message_text(
+            f"✏️ *Editing {field_map[field]}*\n\nNaya text/link bhejo:",
             parse_mode=ParseMode.MARKDOWN_V2,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🚫 Cancel", callback_data="admin:back")]])
         )
@@ -653,6 +682,20 @@ async def handle_admin_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Valid Telegram ID bhejo\\.", parse_mode=ParseMode.MARKDOWN_V2)
         return
 
+    # ── Edit Campaign Field ──
+    edit_field = ctx.user_data.get("awaiting_edit")
+    if edit_field:
+        ctx.user_data.pop("awaiting_edit", None)
+        active = db.get_active_giveaway()
+        if active:
+            val = update.message.text.strip()
+            db.update_giveaway_field(active["id"], edit_field, val)
+            await update.message.reply_text(
+                f"✅ Campaign ka `{esc(edit_field)}` modify ho gaya\\.",
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+        return
+
     # ── Campaign Creation ──
     if not ctx.user_data.get("creating_giveaway"):
         return
@@ -670,9 +713,18 @@ async def handle_admin_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     elif step == "repo":
         cre["repo_url"] = update.message.text.strip()
-        cre["step"]     = "winners"
+        cre["step"]     = "tutorial"
         await update.message.reply_text(
-            "🏆 *Step 3/6 — Kitne winners chahiye?*\n_Number bhejo, e\\.g\\. 3_",
+            "📹 *Step 3/7 — Tutorial Link bhejo (kaise join karna hai?)*\n_Agar koi tutorial nahi hai toh `skip` type karo\\._",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+
+    elif step == "tutorial":
+        val = update.message.text.strip()
+        cre["tutorial_link"] = None if val.lower() == "skip" else val
+        cre["step"]          = "winners"
+        await update.message.reply_text(
+            "🏆 *Step 4/7 — Kitne winners chahiye?*\n_Number bhejo, e\\.g\\. 3_",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
 
@@ -684,7 +736,7 @@ async def handle_admin_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         cre["winners_count"] = int(text)
         cre["step"]          = "duration"
         await update.message.reply_text(
-            "⏱ *Step 4/6 — Duration select karo:*",
+            "⏱ *Step 5/7 — Duration select karo:*",
             parse_mode=ParseMode.MARKDOWN_V2,
             reply_markup=kb_duration_presets(),
         )
@@ -697,7 +749,7 @@ async def handle_admin_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         cre["duration_minutes"] = int(text)
         cre["step"] = "threshold"
         await update.message.reply_text(
-            "🎯 *Step 5/6 — Minimum participants threshold \\(0 \\= no limit\\):*\n"
+            "🎯 *Step 6/7 — Minimum participants threshold \\(0 \\= no limit\\):*\n"
             "_Agar itne log join nahi karte, giveaway auto\\-cancel ho jayega\\._",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
@@ -710,7 +762,7 @@ async def handle_admin_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         cre["min_threshold"] = int(text)
         cre["step"] = "secret"
         await update.message.reply_text(
-            "🏅 *Step 6/6 — Secret Prize \\(optional\\):*\n"
+            "🏅 *Step 7/7 — Secret Prize \\(optional\\):*\n"
             "_10\\+ referrals wale users ke liye bonus prize \\(skip karne ke liye `none` type karo\\)_",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
@@ -744,6 +796,7 @@ async def _show_preview(update_or_query, ctx, cre):
 
     secret_line = f"🏅 Secret Prize: {esc(cre['secret_prize'])}" if cre.get("secret_prize") else "🏅 Secret Prize: _none_"
     threshold_line = f"🎯 Min Threshold: `{cre['min_threshold']}`" if cre.get("min_threshold") else "🎯 Min Threshold: _none_"
+    tut_line = f"📹 *Tutorial:* {esc(cre['tutorial_link'])}\n" if cre.get("tutorial_link") else ""
 
     preview = (
         f"👁 *Preview — Campaign Announcement*\n\n"
@@ -754,6 +807,7 @@ async def _show_preview(update_or_query, ctx, cre):
         f"⏳ *Duration:* `{code_esc(dur_str.strip())}`\n"
         f"📅 *Ends:* {esc(fmt_dt(end_dt))}\n"
         f"🔗 *Repo:* {esc(cre['repo_url'])}\n"
+        f"{tut_line}"
         f"{threshold_line}\n"
         f"{secret_line}\n"
         f"━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -793,6 +847,7 @@ async def creation_confirm_callback(update: Update, ctx: ContextTypes.DEFAULT_TY
             winners_count=cre["winners_count"],
             min_threshold=cre.get("min_threshold", 0),
             secret_prize=cre.get("secret_prize"),
+            tutorial_link=cre.get("tutorial_link"),
             created_at=now.isoformat(),
             end_time=end_time.isoformat(),
         )
@@ -808,11 +863,13 @@ async def creation_confirm_callback(update: Update, ctx: ContextTypes.DEFAULT_TY
         )
 
         g = db.get_giveaway(gid)
+        tut_str = f"📹 *Kaise join karein? Watch Tutorial:*\n👉 {esc(g['tutorial_link'])}\n\n" if g.get("tutorial_link") else ""
         announcement = (
             f"🎉 *CAMPAIGN \\#{esc(gid)} LIVE HAI\\!*\n\n"
             f"🎁 *Prize:* {esc(g['prize'])}\n"
             f"🏆 *Winners:* `{g['winners_count']}`\n"
             f"⏳ *Ends:* {esc(fmt_dt(end_time))}\n\n"
+            f"{tut_str}"
             f"*Participate kaise karein?*\n"
             f"1️⃣ Is repo ko ⭐ Star karo:\n"
             f"👉 {esc(g['repo_url'])}\n\n"
@@ -850,7 +907,7 @@ async def creation_confirm_callback(update: Update, ctx: ContextTypes.DEFAULT_TY
             cre["step"] = "threshold"
             await query.edit_message_text(
                 f"✅ Duration set: *{esc(preset)}*\n\n"
-                "🎯 *Step 5/6 — Minimum participants threshold \\(0 \\= no limit\\):*\n"
+                "🎯 *Step 6/7 — Minimum participants threshold \\(0 \\= no limit\\):*\n"
                 "_Number bhejo\\._",
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
@@ -915,9 +972,11 @@ async def _start_join_flow(user, chat, ctx: ContextTypes.DEFAULT_TYPE):
     bot_info = await ctx.bot.get_me()
     ref_link = f"https://t.me/{bot_info.username}?start=ref_{user.id}"
     ref_count = db.count_referrals(active["id"], user.id)
+    tut_str = f"🆘 *Watch Tutorial (kaise join karein):*\n👉 {esc(active['tutorial_link'])}\n\n" if active.get("tutorial_link") else ""
 
     await chat.send_message(
         f"🎉 *Campaign \\#{esc(active['id'])} — Entry Instructions*\n\n"
+        f"{tut_str}"
         f"*Step 1️⃣* — Is repo ko ⭐ Star karo:\n"
         f"👉 {esc(active['repo_url'])}\n\n"
         f"*Step 2️⃣* — Ek message bhejo jisme:\n"
@@ -1041,10 +1100,32 @@ async def handle_review(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if action == "approve":
         db.update_entry_status(eid, "approved")
         approved_count = db.count_approved(entry["giveaway_id"])
-        ref_count      = db.count_referrals(entry["giveaway_id"], entry["user_id"])
+        
+        # Check if they were referred by someone
+        referrer_id = db.get_referrer(entry["giveaway_id"], entry["user_id"])
+        if referrer_id:
+            ref_count = db.count_referrals(entry["giveaway_id"], referrer_id)
+            if ref_count >= REFERRAL_PRIORITY_THRESHOLD:
+                db.set_priority_boost(entry["giveaway_id"], referrer_id, 1)
+            
+            try:
+                await ctx.bot.send_message(
+                    chat_id=referrer_id,
+                    text=(
+                        f"🎉 *Successful Referral\\!*\n\n"
+                        f"👤 {esc(entry.get('telegram_username') or 'Ek user')} ki entry approve ho gayi hai\\!\n"
+                        f"📊 Total successful referrals: *{esc(ref_count)}*\n"
+                        + (f"\n⚡ *Priority Boost activated\\!* \\(5\\+ referrals\\)" if ref_count == REFERRAL_PRIORITY_THRESHOLD else "")
+                        + (f"\n🏆 *Secret Prize eligible\\!* \\(10\\+ referrals\\)" if ref_count == REFERRAL_SECRET_THRESHOLD else "")
+                    ),
+                    parse_mode=ParseMode.MARKDOWN_V2,
+                )
+            except Exception:
+                pass
 
-        # Update priority boost
-        if ref_count >= REFERRAL_PRIORITY_THRESHOLD:
+        # Update priority boost for the APPROVED user (if they also referred others)
+        user_ref_count = db.count_referrals(entry["giveaway_id"], entry["user_id"])
+        if user_ref_count >= REFERRAL_PRIORITY_THRESHOLD:
             db.set_priority_boost(entry["giveaway_id"], entry["user_id"], 1)
 
         try:
