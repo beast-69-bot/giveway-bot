@@ -1132,6 +1132,22 @@ async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         parse_mode=ParseMode.MARKDOWN_V2,
     )
 
+    referrer_id = db.get_referrer(giveaway_id, user.id)
+    if referrer_id:
+        try:
+            await ctx.bot.send_message(
+                chat_id=referrer_id,
+                text=(
+                    f"🎉 *Congratulations\\!* Tera referral successfully campaign join kar chuka hai\\.\n\n"
+                    f"👤 User: {esc(user.full_name)}\n"
+                    f"_Jab admin inka proof approve karega, toh tera referral count officially badh jayega\\!_ ⏳"
+                ),
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+        except Exception:
+            pass
+
+
     # Forward to admin
     tg_info = f"@{esc(user.username)}" if user.username else f"ID:`{user.id}`"
     caption_txt = (
