@@ -741,7 +741,7 @@ async def handle_admin_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         cre["repo_url"] = update.message.text.strip()
         cre["step"]     = "tutorial"
         await update.message.reply_text(
-            "📹 *Step 3/7 — Tutorial Link bhejo (kaise join karna hai?)*\n_Agar koi tutorial nahi hai toh `skip` type karo\\._",
+            "📹 *Step 3/7 — Tutorial Link bhejo \\(kaise join karna hai?\\)*\n_Agar koi tutorial nahi hai toh `skip` type karo\\._",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
 
@@ -1003,7 +1003,7 @@ async def _start_join_flow(user, chat, ctx: ContextTypes.DEFAULT_TYPE):
     ref_link = f"https://t.me/{bot_info.username}?start=ref_{user.id}"
     ref_count = db.count_referrals(active["id"], user.id)
     try:
-        tut_str = f"🆘 *Watch Tutorial (kaise join karein):*\n👉 {esc(active['tutorial_link'])}\n\n" if active["tutorial_link"] else ""
+        tut_str = f"🆘 *Watch Tutorial \\(kaise join karein\\):*\n👉 {esc(active['tutorial_link'])}\n\n" if active["tutorial_link"] else ""
     except IndexError:
         tut_str = ""
 
