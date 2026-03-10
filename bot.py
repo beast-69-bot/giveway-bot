@@ -999,7 +999,7 @@ async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"🔖 Telegram: {tg_info}\n"
         f"🆔 ID: `{user.id}`\n"
         f"🐙 GitHub: `{code_esc(github_username)}`\n"
-        f"🎁 Giveaway: \\#{esc(giveaway_id)}\n"
+        f"🎁 Campaign: \\#{esc(giveaway_id)}\n"
         f"⏱ Time \\(UTC\\): `{now[:16]}`\n"
         f"📊 Approved so far: `{approved_count}`"
     )
@@ -1051,7 +1051,7 @@ async def handle_review(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 text=(
                     f"🎉 *Teri Entry Approve Ho Gayi\\!*\n\n"
                     f"🐙 GitHub: `{code_esc(entry['github_username'])}`\n"
-                    f"📌 Giveaway: \\#{esc(entry['giveaway_id'])}\n"
+                    f"📌 Campaign: \\#{esc(entry['giveaway_id'])}\n"
                     f"👥 Total approved: `{approved_count}`\n\n"
                     f"_All the best\\! 🍀_"
                 ),
@@ -1060,7 +1060,9 @@ async def handle_review(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-        new_cap = (query.message.caption or "") + f"\n\n✅ *APPROVED* \\| Total: `{approved_count}`"
+        # Escape existing caption because message.caption is plain text
+        base_cap = esc(query.message.caption or "")
+        new_cap = f"{base_cap}\n\n✅ *APPROVED* \\| Total: `{approved_count}`"
         await query.edit_message_caption(new_cap, parse_mode=ParseMode.MARKDOWN_V2)
 
     elif action == "reject":
@@ -1080,7 +1082,9 @@ async def handle_review(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
         except Exception:
             pass
-        new_cap = (query.message.caption or "") + "\n\n❌ *REJECTED*"
+            
+        base_cap = esc(query.message.caption or "")
+        new_cap = f"{base_cap}\n\n❌ *REJECTED*"
         await query.edit_message_caption(new_cap, parse_mode=ParseMode.MARKDOWN_V2)
 
 
