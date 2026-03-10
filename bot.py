@@ -178,6 +178,10 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     text = update.message.text or ""
 
+    if ctx.args and ctx.args[0] == "join":
+        await _start_join_flow(user, update.effective_chat, ctx)
+        return
+
     # Handle referral deep-link: /start ref_12345
     if ctx.args:
         arg = ctx.args[0]
@@ -603,6 +607,12 @@ async def _do_draw(query_or_msg, ctx: ContextTypes.DEFAULT_TYPE, active):
     if not approved:
         if hasattr(query_or_msg, "edit_message_text"):
             await query_or_msg.edit_message_text("❌ Koi approved entry nahi hai abhi tak\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        else:
+            await ctx.bot.send_message(
+                ADMIN_ID,
+                "❌ Koi approved entry nahi hai abhi tak\\.",
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
         return
 
     # Check threshold
@@ -1438,21 +1448,13 @@ async def auto_expire_job(ctx: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Auto draw
-    class FakeQuery:
-        message = None
-        async def edit_message_text(self, *a, **kw): pass
-
     await ctx.bot.send_message(
         ADMIN_ID,
         f"⏰ *Giveaway \\#{esc(gid)} expired — auto draw shuru\\!*",
         parse_mode=ParseMode.MARKDOWN_V2,
     )
 
-    class DummyCtx:
-        bot = ctx.bot
-
-    await _do_draw(FakeQuery(), ctx, g)
+    await _do_draw(None, ctx, g)
 
 
 # ══════════════════════════════════════════════
@@ -1484,6 +1486,21 @@ def main():
     app.add_handler(MessageHandler(
         filters.PHOTO & filters.ChatType.PRIVATE, handle_photo
     ))
+
+    active = db.get_active_giveaway()
+    if active and app.job_queue:
+        try:
+            end_dt = datetime.fromisoformat(active["end_time"])
+            delay_seconds = max((end_dt - utcnow()).total_seconds(), 0)
+            app.job_queue.run_once(
+                auto_expire_job,
+                when=delay_seconds,
+                data={"giveaway_id": active["id"]},
+                name=f"expire_{active['id']}",
+            )
+            log.info("⏰ Restored auto-expiry timer for campaign #%s.", active["id"])
+        except Exception:
+            log.exception("Failed to restore auto-expiry timer for active campaign.")
 
     log.info("🚀 Giveaway Bot V2 chal raha hai...")
     app.run_polling(drop_pending_updates=True)

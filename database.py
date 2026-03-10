@@ -62,14 +62,18 @@ def init_db():
             banned_at  TEXT NOT NULL
         );
         """)
-        try:
-            c.execute("ALTER TABLE entries ADD COLUMN is_winner INTEGER NOT NULL DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            c.execute("ALTER TABLE giveaways ADD COLUMN tutorial_link TEXT")
-        except sqlite3.OperationalError:
-            pass
+        migrations = [
+            "ALTER TABLE giveaways ADD COLUMN min_threshold INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE giveaways ADD COLUMN secret_prize TEXT",
+            "ALTER TABLE giveaways ADD COLUMN tutorial_link TEXT",
+            "ALTER TABLE entries ADD COLUMN priority_boost INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE entries ADD COLUMN is_winner INTEGER NOT NULL DEFAULT 0",
+        ]
+        for stmt in migrations:
+            try:
+                c.execute(stmt)
+            except sqlite3.OperationalError:
+                pass
 
 
 # ── Giveaways ────────────────────────────────
