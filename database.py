@@ -61,6 +61,10 @@ def init_db():
             banned_at  TEXT NOT NULL
         );
         """)
+        try:
+            c.execute("ALTER TABLE entries ADD COLUMN is_winner INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
 
 
 # ── Giveaways ────────────────────────────────

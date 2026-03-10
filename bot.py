@@ -1194,7 +1194,14 @@ async def user_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         status_icon = {"pending": "⏳", "approved": "✅", "rejected": "❌"}.get(status_label, "➖")
         
         winner_msg = ""
-        if entry and entry["is_winner"]:
+        is_winner = False
+        if entry:
+            try:
+                is_winner = entry["is_winner"]
+            except IndexError:
+                pass
+
+        if is_winner:
             winner_msg = "\n\n🎊 *CONGRATULATIONS\\! TU JEET GAYA HAI\\!* 🎉"
         elif campaign["status"] != "active" and entry:
             winner_msg = "\n\n😔 Iss baar luck nahi chala, try again next time\\!"
