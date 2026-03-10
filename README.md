@@ -1,41 +1,36 @@
-# 🎉 Telegram Giveaway Bot — Setup Guide
+# 💠 Giveaway Bot V2 — Enterprise Edition
 
 ## 📁 Files
 ```
-giveaway_bot/
-├── bot.py           ← Main bot
-├── database.py      ← SQLite layer
-├── config.py        ← Token & Admin ID
+giveaway_v2/
+├── bot.py           ← Main bot (all handlers)
+├── database.py      ← SQLite — giveaways, entries, referrals, bans
+├── config.py        ← Token, Admin ID, presets
 ├── requirements.txt
 └── README.md
 ```
 
 ---
 
-## ⚙️ Setup Steps
+## ⚙️ Setup
 
-### 1. Bot Token Lo
-- Telegram mein @BotFather ko message karo
-- `/newbot` command do → naam aur username choose karo
-- Token copy karo
-
-### 2. Apna Telegram ID Lo
-- @userinfobot ko message karo Telegram mein
-- Wo tumhara numeric ID batayega
-
-### 3. config.py Edit Karo
-```python
-BOT_TOKEN = "1234567890:ABCdef..."   # BotFather wala token
-ADMIN_ID  = 987654321                # Tumhara Telegram ID
+### 1. BotFather se token lo
+```
+/newbot → naam → username → TOKEN copy karo
 ```
 
-### 4. Install karo
+### 2. Apna Telegram ID lo
+- @userinfobot ko message karo
+
+### 3. config.py edit karo
+```python
+BOT_TOKEN = "YOUR_TOKEN"
+ADMIN_ID  = 123456789
+```
+
+### 4. Install & Run
 ```bash
 pip install -r requirements.txt
-```
-
-### 5. Run karo
-```bash
 python bot.py
 ```
 
@@ -43,47 +38,62 @@ python bot.py
 
 ## 🤖 Commands
 
-### Admin Commands
-| Command | Kaam |
+### Admin
+| Command | Action |
 |---|---|
-| `/newgiveaway` | Naya giveaway create karo (prize, repo, winners, duration) |
-| `/participants` | Sabki entry status dekho |
-| `/draw` | Random winner nikalo |
-| `/cancelgiveaway` | Active giveaway cancel karo |
+| `/admin` | Full control dashboard (buttons se sab kuch) |
 
-### User Commands
-| Command | Kaam |
+### User
+| Command | Action |
 |---|---|
-| `/start` | Bot se milna |
-| `/join` | Giveaway mein participate karo (private chat mein) |
+| `/start` | Welcome + active giveaway status |
+| `/join` | Giveaway mein participate (private chat) |
 
 ---
 
 ## 🔄 Full Flow
 
 ```
-Admin → /newgiveaway → prize/repo/winners/duration set karo
-      → Bot ek shareable announcement deta hai
+Admin  /admin → "New Giveaway"
+       → Prize → Repo → Winners → Duration (preset/custom)
+       → Min Threshold → Secret Prize → Preview → Confirm → LIVE!
 
-User  → Bot ko private mein /join bhejo
-      → Repo star karo
-      → Screenshot + GitHub username (caption mein) bhejo
+User   /start → "Join Giveaway" → /join (private)
+       → Repo star karo → Screenshot + GitHub username bhejo
+       → Admin ko proof forward → [✅ Approve] [❌ Reject]
+       → Approved → entry count + referral link mile
 
-Admin → Proof review panel aata hai with [✅ Approve] [❌ Reject]
-      → Approve karo → User count mein aa jaata hai
-      → Reject karo → User ko reason bata ke dobara try karne ka mauka
-
-Admin → /draw → Random winner announce + winner ko DM
+Admin  /admin → "Draw Winners"
+       → Confirm → Auto draw (priority boost wale 2x chance)
+       → Winners announce + DM
 ```
 
 ---
 
-## 🗄️ Database
-SQLite file `giveaway.db` automatically ban jaati hai. Backup ke liye copy kar lo.
+## ⭐ V2 Features
+
+| Feature | Detail |
+|---|---|
+| 💠 Premium UI | MarkdownV2 + Inline buttons everywhere |
+| ⚙️ Admin Dashboard | `/admin` — single control panel |
+| 🎯 Min Threshold | Auto-cancel if not enough participants |
+| ⏱ Duration | 1 hour se 1 month tak (presets + custom) |
+| 👁 Preview | Giveaway live karne se pehle preview |
+| 🔗 Referral Links | Unique link per user, auto-tracked |
+| ⚡ Priority Boost | 5+ referrals → 2x winning chance |
+| 🏅 Secret Prize | 10+ referrals → bonus prize eligible |
+| 🏆 Leaderboard | Top referrers list |
+| 📊 Live Analytics | Approved/Pending/Rejected + referral stats |
+| 📣 Broadcast | Ek click mein sabko message |
+| 🚫 Ban/Unban | Spammers disqualify |
+| 📥 CSV Export | Full participant data download |
+| ⏰ Auto-Expiry | Timer khatam → auto draw ya auto-cancel |
+| 🛡 Anti-Cheat | Duplicate GitHub, self-referral blocked |
 
 ---
 
-## ⚠️ Notes
-- Ek user ek GitHub username se sirf ek baar enter ho sakta hai
-- `/join` sirf private chat mein kaam karta hai
-- Bot ko group mein admin banana zaroori nahi, sirf DM channel ke liye use hoga
+## 🗄️ Database Tables
+- `giveaways` — prize, repo, threshold, secret prize, status
+- `entries` — user proofs, status, priority boost
+- `referrals` — who referred whom
+- `banned_users` — disqualified users
