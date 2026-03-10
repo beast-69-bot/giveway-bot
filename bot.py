@@ -1060,10 +1060,18 @@ async def handle_review(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-        # Escape existing caption because message.caption is plain text
-        base_cap = esc(query.message.caption or "")
-        new_cap = f"{base_cap}\n\n✅ *APPROVED* \\| Total: `{approved_count}`"
-        await query.edit_message_caption(new_cap, parse_mode=ParseMode.MARKDOWN_V2)
+        # Regenerate caption to ensure perfect formatting
+        tg_info = f"@{esc(entry['telegram_username'])}" if entry["telegram_username"] else f"ID:`{entry['user_id']}`"
+        new_cap = (
+            f"📥 *Proof Submission Review*\n\n"
+            f"👤 Telegram: {tg_info}\n"
+            f"🆔 ID: `{entry['user_id']}`\n"
+            f"🐙 GitHub: `{code_esc(entry['github_username'])}`\n"
+            f"🎁 Campaign: \\#{esc(entry['giveaway_id'])}\n"
+            f"⏱ Submitted: `{entry['submitted_at'][:16]}`\n\n"
+            f"✅ *APPROVED* \\| Total: `{approved_count}`"
+        )
+        await query.edit_message_caption(new_cap, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=None)
 
     elif action == "reject":
         db.update_entry_status(eid, "rejected")
@@ -1083,9 +1091,17 @@ async def handle_review(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
             
-        base_cap = esc(query.message.caption or "")
-        new_cap = f"{base_cap}\n\n❌ *REJECTED*"
-        await query.edit_message_caption(new_cap, parse_mode=ParseMode.MARKDOWN_V2)
+        tg_info = f"@{esc(entry['telegram_username'])}" if entry["telegram_username"] else f"ID:`{entry['user_id']}`"
+        new_cap = (
+            f"📥 *Proof Submission Review*\n\n"
+            f"👤 Telegram: {tg_info}\n"
+            f"🆔 ID: `{entry['user_id']}`\n"
+            f"🐙 GitHub: `{code_esc(entry['github_username'])}`\n"
+            f"🎁 Campaign: \\#{esc(entry['giveaway_id'])}\n"
+            f"⏱ Submitted: `{entry['submitted_at'][:16]}`\n\n"
+            f"❌ *REJECTED*"
+        )
+        await query.edit_message_caption(new_cap, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=None)
 
 
 # ══════════════════════════════════════════════
