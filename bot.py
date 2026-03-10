@@ -219,7 +219,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )
 
     msg = (
-        f"💠 *Welcome to Giveaway Bot V2*\n\n"
+        f"💠 *Welcome to Campaign Bot V2*\n\n"
         f"{status_line}\n\n"
         f"Use the buttons below to participate or check stats\\."
     )
@@ -381,11 +381,11 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if active:
             stats = db.get_analytics(active["id"])
             status = (
-                f"📌 *Active:* Giveaway \\#{esc(active['id'])} — {esc(active['prize'])}\n"
+                f"📌 *Active:* Campaign \\#{esc(active['id'])} — {esc(active['prize'])}\n"
                 f"✅ `{stats['approved']}` \\| ⏳ `{stats['pending']}` \\| ❌ `{stats['rejected']}`"
             )
         else:
-            status = "⚪ *No active giveaway\\.*"
+            status = "⚪ *No active campaign\\.*"
         await query.edit_message_text(
             f"⚙️ *Admin Control Center*\n\n{status}\n\n_Select an action:_",
             parse_mode=ParseMode.MARKDOWN_V2,
@@ -1116,7 +1116,24 @@ async def user_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = query.from_user
     action = query.data.split(":")[1]
 
-    if action == "leaderboard":
+    if action == "join":
+        if query.message.chat.type == "private":
+            await _start_join_flow(user, query.message.chat, ctx)
+        else:
+            bot_info = await ctx.bot.get_me()
+            await query.answer(
+                f"Bot ko private mein open karo!",
+                show_alert=True,
+            )
+            await query.message.reply_text(
+                f"📩 {user_mention(user)}, campaign join karne ke liye mujhe private mein message karo\\!",
+                parse_mode=ParseMode.MARKDOWN_V2,
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🚀 Open Private Chat", url=f"https://t.me/{bot_info.username}?start=join")
+                ]])
+            )
+
+    elif action == "leaderboard":
         # Get the most recent campaign (active or ended)
         campaign = db.get_active_giveaway() or db.get_latest_giveaway()
         if not campaign:
@@ -1201,11 +1218,11 @@ async def user_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif action == "back":
         active = db.get_active_giveaway()
         status_line = (
-            f"🟢 *Active Giveaway:* {esc(active['prize'])} \\| ⏳ {esc(time_left(active['end_time']))} left"
-            if active else "⚪ *No active giveaway right now\\.*"
+            f"🟢 *Active Campaign:* {esc(active['prize'])} \\| ⏳ {esc(time_left(active['end_time']))} left"
+            if active else "⚪ *No active campaign right now\\.*"
         )
         await query.edit_message_text(
-            f"💠 *Welcome to Giveaway Bot V2*\n\n{status_line}",
+            f"💠 *Welcome to Campaign Bot V2*\n\n{status_line}",
             parse_mode=ParseMode.MARKDOWN_V2,
             reply_markup=kb_join_menu(),
         )
