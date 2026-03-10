@@ -118,6 +118,13 @@ def set_giveaway_status(gid: int, status: str):
         c.execute("UPDATE giveaways SET status = ? WHERE id = ?", (status, gid))
 
 
+def delete_campaign(gid: int):
+    with get_conn() as c:
+        c.execute("DELETE FROM referrals WHERE giveaway_id = ?", (gid,))
+        c.execute("DELETE FROM entries WHERE giveaway_id = ?", (gid,))
+        c.execute("DELETE FROM giveaways WHERE id = ?", (gid,))
+
+
 # ── Entries ──────────────────────────────────
 
 def add_entry(giveaway_id, user_id, telegram_username,

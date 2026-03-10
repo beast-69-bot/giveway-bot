@@ -133,7 +133,8 @@ def kb_admin_dashboard() -> InlineKeyboardMarkup:
          InlineKeyboardButton("📥 Export CSV",       callback_data="admin:export")],
         [InlineKeyboardButton("🚫 Ban User",         callback_data="admin:ban"),
          InlineKeyboardButton("✅ Unban User",       callback_data="admin:unban")],
-        [InlineKeyboardButton("❌ Cancel Campaign",  callback_data="admin:cancel")],
+        [InlineKeyboardButton("❌ Cancel Active",    callback_data="admin:cancel"),
+         InlineKeyboardButton("🗑 Delete Campaign",  callback_data="admin:delete_prompt")],
     ])
 
 
@@ -376,6 +377,7 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data.pop("awaiting_ban", None)
         ctx.user_data.pop("awaiting_unban", None)
         ctx.user_data.pop("awaiting_edit", None)
+        ctx.user_data.pop("awaiting_delete", None)
         active = db.get_active_giveaway()
         if active:
             stats = db.get_analytics(active["id"])
@@ -473,6 +475,15 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data["awaiting_edit"] = db_col[field]
         await query.edit_message_text(
             f"✏️ *Editing {field_map[field]}*\n\nNaya text/link bhejo:",
+            parse_mode=ParseMode.MARKDOWN_V2,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🚫 Cancel", callback_data="admin:back")]])
+        )
+
+    # ── Delete Campaign ──
+    elif action == "delete_prompt":
+        ctx.user_data["awaiting_delete"] = True
+        await query.edit_message_text(
+            "🗑 *Delete Campaign*\n\nKonse Campaign ko Hamesha ke liye Delete karna hai? Uski *ID* bhejo (e.g. 1):",
             parse_mode=ParseMode.MARKDOWN_V2,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🚫 Cancel", callback_data="admin:back")]])
         )
@@ -694,6 +705,21 @@ async def handle_admin_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"✅ Campaign ka `{esc(edit_field)}` modify ho gaya\\.",
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
+        return
+
+    # ── Delete Campaign ──
+    if ctx.user_data.get("awaiting_delete"):
+        ctx.user_data.pop("awaiting_delete", None)
+        try:
+            cid = int(update.message.text.strip())
+            c_check = db.get_giveaway(cid)
+            if not c_check:
+                await update.message.reply_text("❌ Ye campaign ID database mein nahi mili.", parse_mode=ParseMode.MARKDOWN_V2)
+                return
+            db.delete_campaign(cid)
+            await update.message.reply_text(f"✅ Campaign `{cid}` permanently delete ho gaya hai.", parse_mode=ParseMode.MARKDOWN_V2)
+        except ValueError:
+            await update.message.reply_text("❌ Invalid ID.", parse_mode=ParseMode.MARKDOWN_V2)
         return
 
     # ── Campaign Creation ──
