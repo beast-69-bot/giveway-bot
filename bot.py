@@ -863,7 +863,11 @@ async def creation_confirm_callback(update: Update, ctx: ContextTypes.DEFAULT_TY
         )
 
         g = db.get_giveaway(gid)
-        tut_str = f"📹 *Kaise join karein? Watch Tutorial:*\n👉 {esc(g['tutorial_link'])}\n\n" if g.get("tutorial_link") else ""
+        try:
+            tut_str = f"📹 *Kaise join karein? Watch Tutorial:*\n👉 {esc(g['tutorial_link'])}\n\n" if g["tutorial_link"] else ""
+        except IndexError:
+            tut_str = ""
+
         announcement = (
             f"🎉 *CAMPAIGN \\#{esc(gid)} LIVE HAI\\!*\n\n"
             f"🎁 *Prize:* {esc(g['prize'])}\n"
@@ -972,7 +976,11 @@ async def _start_join_flow(user, chat, ctx: ContextTypes.DEFAULT_TYPE):
     bot_info = await ctx.bot.get_me()
     ref_link = f"https://t.me/{bot_info.username}?start=ref_{user.id}"
     ref_count = db.count_referrals(active["id"], user.id)
-    tut_str = f"🆘 *Watch Tutorial (kaise join karein):*\n👉 {esc(active['tutorial_link'])}\n\n" if active.get("tutorial_link") else ""
+    try:
+        tut_str = f"🆘 *Watch Tutorial (kaise join karein):*\n👉 {esc(active['tutorial_link'])}\n\n" if active["tutorial_link"] else ""
+    except IndexError:
+        tut_str = ""
+
 
     await chat.send_message(
         f"🎉 *Campaign \\#{esc(active['id'])} — Entry Instructions*\n\n"
