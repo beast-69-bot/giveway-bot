@@ -1188,7 +1188,7 @@ async def user_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         entry = db.get_entry_by_user(gid, user.id)
         ref_cnt = db.count_referrals(gid, user.id)
         bot_info = await ctx.bot.get_me()
-        ref_link = f"https://t\\.me/{bot_info.username}?start=ref_{user.id}"
+        ref_link = f"https://t.me/{bot_info.username}?start=ref_{user.id}"
         
         status_label = entry["status"] if entry else "Not joined"
         status_icon = {"pending": "⏳", "approved": "✅", "rejected": "❌"}.get(status_label, "➖")
