@@ -76,9 +76,14 @@ pending_proofs: dict = {}
 # ══════════════════════════════════════════════
 
 def esc(text) -> str:
-    """Escape a string for MarkdownV2."""
+    """Escape a string for MarkdownV2 (outside of code/links)."""
     special = r'\_*[]()~`>#+-=|{}.!'
     return ''.join(f'\\{c}' if c in special else c for c in str(text))
+
+
+def code_esc(text) -> str:
+    """Escape for inside backticks (MarkdownV2)."""
+    return str(text).replace('\\', '\\\\').replace('`', '\\`')
 
 
 def is_admin(uid: int) -> bool:
@@ -118,7 +123,7 @@ def time_left(end_time_iso: str) -> str:
 
 def kb_admin_dashboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("➕ New Giveaway",     callback_data="admin:new")],
+        [InlineKeyboardButton("➕ New Campaign",      callback_data="admin:new")],
         [InlineKeyboardButton("📊 Live Analytics",   callback_data="admin:analytics"),
          InlineKeyboardButton("👥 Participants",     callback_data="admin:participants")],
         [InlineKeyboardButton("📣 Broadcast",        callback_data="admin:broadcast"),
@@ -127,7 +132,7 @@ def kb_admin_dashboard() -> InlineKeyboardMarkup:
          InlineKeyboardButton("📥 Export CSV",       callback_data="admin:export")],
         [InlineKeyboardButton("🚫 Ban User",         callback_data="admin:ban"),
          InlineKeyboardButton("✅ Unban User",       callback_data="admin:unban")],
-        [InlineKeyboardButton("❌ Cancel Giveaway",  callback_data="admin:cancel")],
+        [InlineKeyboardButton("❌ Cancel Campaign",  callback_data="admin:cancel")],
     ])
 
 
@@ -159,7 +164,7 @@ def kb_approve_reject(entry_id: int) -> InlineKeyboardMarkup:
 
 def kb_join_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎯 Join Giveaway",       callback_data="user:join")],
+        [InlineKeyboardButton("🎯 Join Campaign",       callback_data="user:join")],
         [InlineKeyboardButton("🏆 Leaderboard",         callback_data="user:leaderboard")],
         [InlineKeyboardButton("📊 My Stats",            callback_data="user:mystats")],
     ])
@@ -208,9 +213,9 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     active = db.get_active_giveaway()
     status_line = (
-        f"🟢 *Active Giveaway:* {esc(active['prize'])} \\| "
+        f"🟢 *Active Campaign:* {esc(active['prize'])} \\| "
         f"⏳ {esc(time_left(active['end_time']))} left"
-        if active else "⚪ *No active giveaway right now\\.*"
+        if active else "⚪ *No active campaign right now\\.*"
     )
 
     msg = (
@@ -235,15 +240,15 @@ async def cmd_admin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if active:
         stats = db.get_analytics(active["id"])
         status = (
-            f"📌 *Active:* Giveaway \\#{esc(active['id'])} — {esc(active['prize'])}\n"
+            f"📌 *Active:* Campaign \\#{esc(active['id'])} — {esc(active['prize'])}\n"
             f"✅ Approved: `{stats['approved']}` \\| "
             f"⏳ Pending: `{stats['pending']}` \\| "
             f"❌ Rejected: `{stats['rejected']}`\n"
             f"🔗 Referrals: `{stats['referrals']}` \\| "
-            f"⏱ Left: `{esc(time_left(active['end_time']))}`"
+            f"⏱ Left: `{code_esc(time_left(active['end_time']))}`"
         )
     else:
-        status = "⚪ *No active giveaway\\.*"
+        status = "⚪ *No active campaign\\.*"
 
     msg = (
         f"⚙️ *Admin Control Center*\n\n"
@@ -282,10 +287,10 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ) if threshold > 0 else ""
 
         msg = (
-            f"📊 *Live Analytics — Giveaway \\#{esc(active['id'])}*\n\n"
+            f"📊 *Live Analytics — Campaign \\#{esc(active['id'])}*\n\n"
             f"🎁 Prize: {esc(active['prize'])}\n"
             f"🔗 Repo: {esc(active['repo_url'])}\n"
-            f"⏳ Time Left: `{esc(time_left(active['end_time']))}`\n\n"
+            f"⏳ Time Left: `{code_esc(time_left(active['end_time']))}`\n\n"
             f"✅ Approved: `{stats['approved']}`\n"
             f"⏳ Pending: `{stats['pending']}`\n"
             f"❌ Rejected: `{stats['rejected']}`\n"
@@ -308,13 +313,13 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not entries:
             await query.answer("Koi entry nahi abhi tak.", show_alert=True)
             return
-        lines = [f"👥 *Participants — Giveaway \\#{esc(active['id'])}*\n"]
+        lines = [f"👥 *Participants — Campaign \\#{esc(active['id'])}*\n"]
         icons = {"pending": "⏳", "approved": "✅", "rejected": "❌"}
         for e in entries:
             tg = f"@{esc(e['telegram_username'])}" if e["telegram_username"] else f"ID:{esc(e['user_id'])}"
             ref_c = db.count_referrals(active["id"], e["user_id"])
             boost = "⚡" if e["priority_boost"] else ""
-            lines.append(f"{icons.get(e['status'], '?')} {tg} \\| GH: `{esc(e['github_username'])}` {boost} refs:{ref_c}")
+            lines.append(f"{icons.get(e['status'], '?')} {tg} \\| GH: `{code_esc(e['github_username'])}` {boost} refs:{ref_c}")
         await query.edit_message_text(
             "\n".join(lines),
             parse_mode=ParseMode.MARKDOWN_V2,
@@ -331,7 +336,7 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not board:
             await query.answer("Koi referral nahi abhi tak.", show_alert=True)
             return
-        lines = [f"🏆 *Referral Leaderboard — Giveaway \\#{esc(active['id'])}*\n"]
+        lines = [f"🏆 *Referral Leaderboard — Campaign \\#{esc(active['id'])}*\n"]
         medals = ["🥇", "🥈", "🥉"]
         for i, row in enumerate(board):
             medal = medals[i] if i < 3 else f"{i+1}\\."
@@ -350,10 +355,10 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif action == "draw":
         active = db.get_active_giveaway()
         if not active:
-            await query.answer("No active giveaway.", show_alert=True)
+            await query.answer("No active campaign.", show_alert=True)
             return
         await query.edit_message_text(
-            "🎰 *Draw karna chahte ho?*\n\nYe action giveaway end kar dega\\.",
+            "🎰 *Draw karna chahte ho?*\n\nYe action campaign end kar dega\\.",
             parse_mode=ParseMode.MARKDOWN_V2,
             reply_markup=kb_yes_no("draw:confirm", "admin:back")
         )
@@ -362,10 +367,10 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif action == "cancel":
         active = db.get_active_giveaway()
         if not active:
-            await query.answer("No active giveaway.", show_alert=True)
+            await query.answer("No active campaign.", show_alert=True)
             return
         await query.edit_message_text(
-            f"❌ *Giveaway \\#{esc(active['id'])} cancel karna chahte ho?*",
+            f"❌ *Campaign \\#{esc(active['id'])} cancel karna chahte ho?*",
             parse_mode=ParseMode.MARKDOWN_V2,
             reply_markup=kb_yes_no("cancel:confirm", "admin:back")
         )
@@ -448,12 +453,12 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         active = db.get_active_giveaway()
         if active:
             await query.answer(
-                f"Pehle active giveaway #{active['id']} end karo ya cancel karo.",
+                f"Pehle active campaign #{active['id']} end karo ya cancel karo.",
                 show_alert=True
             )
             return
         await query.edit_message_text(
-            "🎁 *New Giveaway — Step 1/6*\n\n*Prize ka naam kya hai?*\n_e\\.g\\. ₹500 Amazon Gift Card_",
+            "🎁 *New Campaign — Step 1/6*\n\n*Prize ka naam kya hai?*\n_e\\.g\\. ₹500 Amazon Gift Card_",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         ctx.user_data["cre"] = {}
@@ -483,11 +488,11 @@ async def draw_cancel_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif action == "cancel:confirm":
         active = db.get_active_giveaway()
         if not active:
-            await query.edit_message_text("No active giveaway.")
+            await query.edit_message_text("No active campaign.")
             return
         db.set_giveaway_status(active["id"], "cancelled")
         await query.edit_message_text(
-            f"🗑 *Giveaway \\#{esc(active['id'])} cancel ho gaya\\.*",
+            f"🗑 *Campaign \\#{esc(active['id'])} cancel ho gaya\\.*",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
 
@@ -537,7 +542,7 @@ async def _do_draw(query_or_msg, ctx: ContextTypes.DEFAULT_TYPE, active):
 
     # Build winner announcement
     lines = [
-        f"🎊 *GIVEAWAY \\#{esc(active['id'])} RESULTS\\!*\n",
+        f"🎊 *CAMPAIGN \\#{esc(active['id'])} RESULTS\\!*\n",
         f"🎁 *Prize:* {esc(active['prize'])}",
         f"👥 *Total participants:* `{len(approved)}`\n",
         "🏆 *Winners:*\n",
@@ -545,8 +550,8 @@ async def _do_draw(query_or_msg, ctx: ContextTypes.DEFAULT_TYPE, active):
     medals = ["🥇", "🥈", "🥉"]
     for i, w in enumerate(winners):
         medal = medals[i] if i < 3 else f"{i+1}\\."
-        tg = f"@{esc(w['telegram_username'])}" if w["telegram_username"] else f"User `{esc(w['user_id'])}`"
-        lines.append(f"{medal} {tg} \\| GH: `{esc(w['github_username'])}`")
+        tg = f"@{esc(w['telegram_username'])}" if w["telegram_username"] else f"User `{code_esc(w['user_id'])}`"
+        lines.append(f"{medal} {tg} \\| GH: `{code_esc(w['github_username'])}`")
 
     # Secret prize winners
     secret_eligible = db.get_secret_prize_eligible(active["id"], REFERRAL_SECRET_THRESHOLD)
@@ -572,7 +577,7 @@ async def _do_draw(query_or_msg, ctx: ContextTypes.DEFAULT_TYPE, active):
                 text=(
                     f"🎊 *Congratulations\\! Tu Jeet Gaya\\!* 🎉\n\n"
                     f"🎁 Prize: {esc(active['prize'])}\n"
-                    f"📌 Giveaway: \\#{esc(active['id'])}\n\n"
+                    f"📌 Campaign: \\#{esc(active['id'])}\n\n"
                     f"Prize claim karne ke liye admin se contact karo\\! 🙌"
                 ),
                 parse_mode=ParseMode.MARKDOWN_V2,
@@ -582,7 +587,7 @@ async def _do_draw(query_or_msg, ctx: ContextTypes.DEFAULT_TYPE, active):
 
 
 # ══════════════════════════════════════════════
-#  ➕ Giveaway Creation Flow (text message steps)
+#  ➕ Campaign Creation Flow (text message steps)
 # ══════════════════════════════════════════════
 
 async def handle_admin_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -596,6 +601,7 @@ async def handle_admin_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data.pop("awaiting_broadcast", None)
         gid = ctx.user_data.get("broadcast_gid")
         if not gid:
+            await update.message.reply_text("❌ No active campaign to broadcast to.")
             return
         entries = db.get_approved_entries(gid)
         sent, failed = 0, 0
@@ -624,7 +630,7 @@ async def handle_admin_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             reason = parts[1].strip() if len(parts) > 1 else "No reason given"
             db.ban_user(uid, reason, utcnow().isoformat())
             await update.message.reply_text(
-                f"🚫 User `{esc(uid)}` ban ho gaya\\.\nReason: {esc(reason)}",
+                f"🚫 User `{code_esc(uid)}` ban ho gaya\\.\nReason: {esc(reason)}",
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
         except ValueError:
@@ -638,14 +644,14 @@ async def handle_admin_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             uid = int(update.message.text.strip())
             db.unban_user(uid)
             await update.message.reply_text(
-                f"✅ User `{esc(uid)}` unban ho gaya\\.",
+                f"✅ User `{code_esc(uid)}` unban ho gaya\\.",
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
         except ValueError:
             await update.message.reply_text("❌ Valid Telegram ID bhejo\\.", parse_mode=ParseMode.MARKDOWN_V2)
         return
 
-    # ── Giveaway Creation ──
+    # ── Campaign Creation ──
     if not ctx.user_data.get("creating_giveaway"):
         return
 
@@ -715,7 +721,15 @@ async def handle_admin_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def _show_preview(update_or_query, ctx, cre):
-    """Show giveaway preview before confirming."""
+    """Show campaign preview before confirming."""
+    if not cre or "prize" not in cre:
+        msg = "❌ *Session expired\\.* Campaign creation dobara start karo\\."
+        if hasattr(update_or_query, "message") and update_or_query.message:
+             await update_or_query.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN_V2)
+        else:
+             await update_or_query.answer("Session expired", show_alert=True)
+        return
+
     dur = cre.get("duration_minutes", 60)
     end_dt = utcnow() + timedelta(minutes=dur)
     days = dur // 1440
@@ -730,12 +744,12 @@ async def _show_preview(update_or_query, ctx, cre):
     threshold_line = f"🎯 Min Threshold: `{cre['min_threshold']}`" if cre.get("min_threshold") else "🎯 Min Threshold: _none_"
 
     preview = (
-        f"👁 *Preview — Giveaway Announcement*\n\n"
+        f"👁 *Preview — Campaign Announcement*\n\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"🎉 *GIVEAWAY LIVE HAI\\!*\n\n"
+        f"🎉 *CAMPAIGN LIVE HAI\\!*\n\n"
         f"🎁 *Prize:* {esc(cre['prize'])}\n"
         f"🏆 *Winners:* `{cre['winners_count']}`\n"
-        f"⏳ *Duration:* `{esc(dur_str.strip())}`\n"
+        f"⏳ *Duration:* `{code_esc(dur_str.strip())}`\n"
         f"📅 *Ends:* {esc(fmt_dt(end_dt))}\n"
         f"🔗 *Repo:* {esc(cre['repo_url'])}\n"
         f"{threshold_line}\n"
@@ -744,7 +758,7 @@ async def _show_preview(update_or_query, ctx, cre):
         f"_Kya ye theek hai? Confirm karo:_"
     )
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🚀 Launch Giveaway", callback_data="cre:confirm"),
+        [InlineKeyboardButton("🚀 Launch Campaign", callback_data="cre:confirm"),
          InlineKeyboardButton("✏️ Start Over",      callback_data="cre:restart")],
     ])
     if hasattr(update_or_query, "message"):
@@ -763,6 +777,10 @@ async def creation_confirm_callback(update: Update, ctx: ContextTypes.DEFAULT_TY
 
     if action == "cre:confirm":
         cre = ctx.user_data.get("cre", {})
+        if not cre or "prize" not in cre:
+            await query.answer("❌ Error: Session data missing. Please start over.", show_alert=True)
+            return
+
         dur = cre.get("duration_minutes", 60)
         now = utcnow()
         end_time = now + timedelta(minutes=dur)
@@ -789,7 +807,7 @@ async def creation_confirm_callback(update: Update, ctx: ContextTypes.DEFAULT_TY
 
         g = db.get_giveaway(gid)
         announcement = (
-            f"🎉 *GIVEAWAY \\#{esc(gid)} LIVE HAI\\!*\n\n"
+            f"🎉 *CAMPAIGN \\#{esc(gid)} LIVE HAI\\!*\n\n"
             f"🎁 *Prize:* {esc(g['prize'])}\n"
             f"🏆 *Winners:* `{g['winners_count']}`\n"
             f"⏳ *Ends:* {esc(fmt_dt(end_time))}\n\n"
@@ -802,7 +820,7 @@ async def creation_confirm_callback(update: Update, ctx: ContextTypes.DEFAULT_TY
             f"_Good luck\\! 🍀_"
         )
         await query.edit_message_text(
-            f"✅ *Giveaway \\#{esc(gid)} Live Hai\\!*\n\nNeeche announcement copy karo 👇",
+            f"✅ *Campaign \\#{esc(gid)} Live Hai\\!*\n\nNeeche announcement copy karo 👇",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         await ctx.bot.send_message(ADMIN_ID, announcement, parse_mode=ParseMode.MARKDOWN_V2)
@@ -811,7 +829,7 @@ async def creation_confirm_callback(update: Update, ctx: ContextTypes.DEFAULT_TY
         ctx.user_data.pop("creating_giveaway", None)
         ctx.user_data.pop("cre", None)
         await query.edit_message_text(
-            "🔄 Restart karo — /admin se New Giveaway dobara try karo\\.",
+            "🔄 Restart karo — /admin se New Campaign dobara try karo\\.",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
 
@@ -840,34 +858,39 @@ async def creation_confirm_callback(update: Update, ctx: ContextTypes.DEFAULT_TY
 #  👤  User Flow — /join + proof
 # ══════════════════════════════════════════════
 
-async def cmd_join(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    if update.effective_chat.type != "private":
-        await update.message.reply_text(
-            "📩 Mujhe *private mein* message karo aur `/join` bhejo\\!",
+async def _start_join_flow(user, chat, ctx: ContextTypes.DEFAULT_TYPE):
+    """Helper to initiate the join process for a user."""
+    if chat.type != "private":
+        bot_info = await ctx.bot.get_me()
+        kb = InlineKeyboardMarkup([[
+            InlineKeyboardButton("🚀 Join Campaign (Private)", url=f"https://t.me/{bot_info.username}?start=join")
+        ]])
+        await chat.send_message(
+            f"📩 {user_mention(user)}, campaign join karne ke liye mujhe private mein message karo\\!",
             parse_mode=ParseMode.MARKDOWN_V2,
+            reply_markup=kb
         )
         return
 
     if db.is_banned(user.id):
-        await update.message.reply_text(
-            "🚫 *Tu is giveaway se disqualify ho gaya hai\\.*",
+        await chat.send_message(
+            "🚫 *Tu is campaign se disqualify ho gaya hai\\.*",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
 
     active = db.get_active_giveaway()
     if not active:
-        await update.message.reply_text(
-            "😔 *Abhi koi active giveaway nahi hai\\.*\nBaad mein try karo\\!",
+        await chat.send_message(
+            "😔 *Abhi koi active campaign nahi hai\\.*\nBaad mein try karo\\!",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
 
     # Check expiry
     if datetime.fromisoformat(active["end_time"]) <= utcnow():
-        await update.message.reply_text(
-            "⏰ *Giveaway ka time khatam ho gaya\\.*",
+        await chat.send_message(
+            "⏰ *Campaign ka time khatam ho gaya\\.*",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
@@ -880,7 +903,7 @@ async def cmd_join(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             "rejected": "❌ *Teri entry reject hui thi\\.*\nSahi proof ke saath dobara bhejo\\.",
         }
         msg = status_msgs.get(existing["status"], "Already submitted\\.")
-        await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN_V2)
+        await chat.send_message(msg, parse_mode=ParseMode.MARKDOWN_V2)
         if existing["status"] != "rejected":
             return
 
@@ -891,8 +914,8 @@ async def cmd_join(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ref_link = f"https://t.me/{bot_info.username}?start=ref_{user.id}"
     ref_count = db.count_referrals(active["id"], user.id)
 
-    await update.message.reply_text(
-        f"🎉 *Giveaway \\#{esc(active['id'])} — Entry Instructions*\n\n"
+    await chat.send_message(
+        f"🎉 *Campaign \\#{esc(active['id'])} — Entry Instructions*\n\n"
         f"*Step 1️⃣* — Is repo ko ⭐ Star karo:\n"
         f"👉 {esc(active['repo_url'])}\n\n"
         f"*Step 2️⃣* — Ek message bhejo jisme:\n"
@@ -900,13 +923,17 @@ async def cmd_join(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"   ✍️ Caption mein *GitHub username*\n\n"
         f"_Example caption: `myGitHubUser123`_\n\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"🔗 *Tera Referral Link:*\n`{esc(ref_link)}`\n\n"
+        f"🔗 *Tera Referral Link:*\n`{code_esc(ref_link)}`\n\n"
         f"📊 Referrals so far: `{ref_count}`\n"
         f"⚡ 5\\+ refs → Priority Boost\n"
         f"🏅 10\\+ refs → Secret Prize eligible\n"
         f"━━━━━━━━━━━━━━━━━━━━",
         parse_mode=ParseMode.MARKDOWN_V2,
     )
+
+
+async def cmd_join(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    await _start_join_flow(update.effective_user, update.effective_chat, ctx)
 
 
 async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -958,7 +985,7 @@ async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         f"✅ *Proof Submit Ho Gaya\\!*\n\n"
-        f"🐙 GitHub: `{esc(github_username)}`\n"
+        f"🐙 GitHub: `{code_esc(github_username)}`\n"
         f"⏳ Admin verify karega — approve hone par entry count hogi\\.\n\n"
         f"_All the best\\! 🍀_",
         parse_mode=ParseMode.MARKDOWN_V2,
@@ -971,7 +998,7 @@ async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"👤 Name: {esc(user.full_name)}\n"
         f"🔖 Telegram: {tg_info}\n"
         f"🆔 ID: `{user.id}`\n"
-        f"🐙 GitHub: `{esc(github_username)}`\n"
+        f"🐙 GitHub: `{code_esc(github_username)}`\n"
         f"🎁 Giveaway: \\#{esc(giveaway_id)}\n"
         f"⏱ Time \\(UTC\\): `{now[:16]}`\n"
         f"📊 Approved so far: `{approved_count}`"
@@ -1023,7 +1050,7 @@ async def handle_review(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 chat_id=entry["user_id"],
                 text=(
                     f"🎉 *Teri Entry Approve Ho Gayi\\!*\n\n"
-                    f"🐙 GitHub: `{esc(entry['github_username'])}`\n"
+                    f"🐙 GitHub: `{code_esc(entry['github_username'])}`\n"
                     f"📌 Giveaway: \\#{esc(entry['giveaway_id'])}\n"
                     f"👥 Total approved: `{approved_count}`\n\n"
                     f"_All the best\\! 🍀_"
@@ -1068,12 +1095,22 @@ async def user_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     action = query.data.split(":")[1]
 
     if action == "join":
-        # Redirect to private chat
-        bot_info = await ctx.bot.get_me()
-        await query.answer(
-            f"Bot ko private mein open karo aur /join bhejo!",
-            show_alert=True,
-        )
+        if query.message.chat.type == "private":
+            await _start_join_flow(user, query.message.chat, ctx)
+        else:
+            bot_info = await ctx.bot.get_me()
+            await query.answer(
+                f"Bot ko private mein open karo!",
+                show_alert=True,
+            )
+            # Maybe update the message or send a new one with the link
+            await query.message.reply_text(
+                f"📩 {user_mention(user)}, campaign join karne ke liye mujhe private mein message karo\\!",
+                parse_mode=ParseMode.MARKDOWN_V2,
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🚀 Open Private Chat", url=f"https://t.me/{bot_info.username}?start=join")
+                ]])
+            )
 
     elif action == "leaderboard":
         active = db.get_active_giveaway()
