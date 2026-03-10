@@ -100,6 +100,12 @@ def get_latest_giveaway():
             "SELECT * FROM giveaways ORDER BY id DESC LIMIT 1"
         ).fetchone()
 
+def get_recent_giveaways(limit=5):
+    with get_conn() as c:
+        return c.execute(
+            "SELECT * FROM giveaways ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+
 def update_giveaway_field(gid: int, field: str, value: str):
     allowed_fields = {"prize", "repo_url", "tutorial_link", "secret_prize"}
     if field not in allowed_fields:

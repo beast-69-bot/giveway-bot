@@ -124,7 +124,7 @@ def time_left(end_time_iso: str) -> str:
 def kb_admin_dashboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("➕ New Campaign",      callback_data="admin:new"),
-         InlineKeyboardButton("✏️ Edit Campaign",     callback_data="admin:edit")],
+         InlineKeyboardButton("🛠 Manage Campaigns",  callback_data="admin:manage")],
         [InlineKeyboardButton("📊 Live Analytics",   callback_data="admin:analytics"),
          InlineKeyboardButton("👥 Participants",     callback_data="admin:participants")],
         [InlineKeyboardButton("📣 Broadcast",        callback_data="admin:broadcast"),
@@ -133,8 +133,6 @@ def kb_admin_dashboard() -> InlineKeyboardMarkup:
          InlineKeyboardButton("📥 Export CSV",       callback_data="admin:export")],
         [InlineKeyboardButton("🚫 Ban User",         callback_data="admin:ban"),
          InlineKeyboardButton("✅ Unban User",       callback_data="admin:unban")],
-        [InlineKeyboardButton("❌ Cancel Active",    callback_data="admin:cancel"),
-         InlineKeyboardButton("🗑 Delete Campaign",  callback_data="admin:delete_prompt")],
     ])
 
 
@@ -267,7 +265,11 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.answer("⛔ Unauthorized", show_alert=True)
         return
 
-    action = query.data.split(":")[1]
+    raw_action = query.data.split(":", 1)[1]
+    if ":" in raw_action:
+        action, arg = raw_action.split(":", 1)
+    else:
+        action, arg = raw_action, None
 
     # ── Analytics ──
     if action == "analytics":
@@ -449,43 +451,86 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🚫 Cancel", callback_data="admin:back")]])
         )
 
-    # ── Edit Campaign ──
-    elif action == "edit":
-        active = db.get_active_giveaway()
-        if not active:
-            await query.answer("No active campaign to edit.", show_alert=True)
+    # ── Manage Campaigns (List) ──
+    elif action == "manage":
+        recent = db.get_recent_giveaways(5)
+        if not recent:
+            await query.answer("No campaigns found.", show_alert=True)
             return
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🎁 Prize", callback_data="admin:edit_prize"),
-             InlineKeyboardButton("🔗 Repo", callback_data="admin:edit_repo")],
-            [InlineKeyboardButton("📹 Tutorial", callback_data="admin:edit_tut")],
-            [InlineKeyboardButton("🔙 Back", callback_data="admin:back")]
-        ])
+        kb = []
+        icons = {"active": "🟢", "ended": "🔴", "cancelled": "⚪"}
+        for cp in recent:
+            st = icons.get(cp['status'], "❓")
+            kb.append([InlineKeyboardButton(f"{st} #{cp['id']} — {cp['prize']}", callback_data=f"admin:manage_cp:{cp['id']}")])
+        kb.append([InlineKeyboardButton("🔙 Back", callback_data="admin:back")])
         await query.edit_message_text(
-            "✏️ *Edit Active Campaign*\n\nKya update karna chahte ho?",
+            "🛠 *Manage Campaigns*\n\nSelect a campaign to edit or delete:",
             parse_mode=ParseMode.MARKDOWN_V2,
-            reply_markup=kb
+            reply_markup=InlineKeyboardMarkup(kb)
         )
 
+    # ── Manage Specific Campaign ──
+    elif action == "manage_cp":
+        cid = int(arg)
+        cp = db.get_giveaway(cid)
+        if not cp:
+            await query.answer("Campaign missing.", show_alert=True)
+            return
+        
+        kb = []
+        if cp["status"] == "active":
+            kb.append([InlineKeyboardButton("🎁 Edit Prize", callback_data=f"admin:edit_prize:{cid}"),
+                       InlineKeyboardButton("🔗 Edit Repo", callback_data=f"admin:edit_repo:{cid}")])
+            kb.append([InlineKeyboardButton("📹 Edit Tutorial", callback_data=f"admin:edit_tut:{cid}")])
+            kb.append([InlineKeyboardButton("❌ Cancel Active", callback_data=f"admin:cancel:{cid}")])
+        
+        kb.append([InlineKeyboardButton("🗑 Delete Permanently", callback_data=f"admin:del_prompt:{cid}")])
+        kb.append([InlineKeyboardButton("🔙 Back to List", callback_data="admin:manage")])
+        
+        msg = (
+            f"🛠 *Campaign #{esc(cid)}*\n\n"
+            f"🎁 Prize: {esc(cp['prize'])}\n"
+            f"🔗 Repo: {esc(cp['repo_url'])}\n"
+            f"📊 Status: `{cp['status']}`"
+        )
+        await query.edit_message_text(
+            msg,
+            parse_mode=ParseMode.MARKDOWN_V2,
+            reply_markup=InlineKeyboardMarkup(kb)
+        )
+
+    # ── Field Edit Prompt ──
     elif action.startswith("edit_"):
         field = action.split("_")[1]
+        cid = int(arg)
         field_map = {"prize": "Prize", "repo": "Repo URL", "tut": "Tutorial Link"}
         db_col = {"prize": "prize", "repo": "repo_url", "tut": "tutorial_link"}
         
         ctx.user_data["awaiting_edit"] = db_col[field]
+        ctx.user_data["edit_cid"] = cid  # Store the specific campaign ID being edited
         await query.edit_message_text(
-            f"✏️ *Editing {field_map[field]}*\n\nNaya text/link bhejo:",
+            f"✏️ *Editing {field_map[field]} (Campaign #{cid})*\n\nNaya text/link bhejo:",
             parse_mode=ParseMode.MARKDOWN_V2,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🚫 Cancel", callback_data="admin:back")]])
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🚫 Cancel", callback_data=f"admin:manage_cp:{cid}")]])
         )
 
-    # ── Delete Campaign ──
-    elif action == "delete_prompt":
-        ctx.user_data["awaiting_delete"] = True
+    # ── Cancel / Delete Prompts ──
+    elif action == "cancel":
+        cid = int(arg)
         await query.edit_message_text(
-            "🗑 *Delete Campaign*\n\nKonse Campaign ko Hamesha ke liye Delete karna hai? Uski *ID* bhejo (e.g. 1):",
+            f"❌ *Campaign \\#{esc(cid)} cancel karna chahte ho?*",
             parse_mode=ParseMode.MARKDOWN_V2,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🚫 Cancel", callback_data="admin:back")]])
+            reply_markup=kb_yes_no(f"cancel:confirm:{cid}", f"admin:manage_cp:{cid}")
+        )
+        
+    elif action == "del_prompt":
+        cid = int(arg)
+        # Using a direct confirmation without another input state
+        kb = kb_yes_no(f"del:confirm:{cid}", f"admin:manage_cp:{cid}")
+        await query.edit_message_text(
+            f"🗑 *Delete Campaign \\#{esc(cid)}*\n\nKya tum sure ho? Ye permanently poora data uda dega\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+            reply_markup=kb
         )
 
     # ── New giveaway (start conversation) ──
@@ -516,7 +561,13 @@ async def draw_cancel_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not is_admin(query.from_user.id):
         return
 
-    action = query.data
+    raw_action = query.data
+    if ":" in raw_action:
+        parts = raw_action.split(":")
+        action = parts[0] + ":" + parts[1]
+        arg = parts[2] if len(parts) > 2 else None
+    else:
+        action, arg = raw_action, None
 
     if action == "draw:confirm":
         active = db.get_active_giveaway()
@@ -526,14 +577,23 @@ async def draw_cancel_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _do_draw(query, ctx, active)
 
     elif action == "cancel:confirm":
-        active = db.get_active_giveaway()
-        if not active:
-            await query.edit_message_text("No active campaign.")
-            return
-        db.set_giveaway_status(active["id"], "cancelled")
+        if not arg: return
+        cid = int(arg)
+        db.set_giveaway_status(cid, "cancelled")
         await query.edit_message_text(
-            f"🗑 *Campaign \\#{esc(active['id'])} cancel ho gaya\\.*",
+            f"❌ *Campaign \\#{esc(cid)} cancel ho gaya\\.*",
             parse_mode=ParseMode.MARKDOWN_V2,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to List", callback_data="admin:manage")]])
+        )
+
+    elif action == "del:confirm":
+        if not arg: return
+        cid = int(arg)
+        db.delete_campaign(cid)
+        await query.edit_message_text(
+            f"✅ *Campaign \\#{esc(cid)} permanently delete ho gaya\\.*",
+            parse_mode=ParseMode.MARKDOWN_V2,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to List", callback_data="admin:manage")]])
         )
 
 
@@ -697,29 +757,15 @@ async def handle_admin_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     edit_field = ctx.user_data.get("awaiting_edit")
     if edit_field:
         ctx.user_data.pop("awaiting_edit", None)
-        active = db.get_active_giveaway()
-        if active:
+        edit_cid = ctx.user_data.get("edit_cid")
+        if edit_cid:
             val = update.message.text.strip()
-            db.update_giveaway_field(active["id"], edit_field, val)
+            db.update_giveaway_field(edit_cid, edit_field, val)
             await update.message.reply_text(
-                f"✅ Campaign ka `{esc(edit_field)}` modify ho gaya\\.",
+                f"✅ Campaign `#{edit_cid}` ka `{esc(edit_field)}` modify ho gaya\\.",
                 parse_mode=ParseMode.MARKDOWN_V2,
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Manage App", callback_data=f"admin:manage_cp:{edit_cid}")]])
             )
-        return
-
-    # ── Delete Campaign ──
-    if ctx.user_data.get("awaiting_delete"):
-        ctx.user_data.pop("awaiting_delete", None)
-        try:
-            cid = int(update.message.text.strip())
-            c_check = db.get_giveaway(cid)
-            if not c_check:
-                await update.message.reply_text("❌ Ye campaign ID database mein nahi mili.", parse_mode=ParseMode.MARKDOWN_V2)
-                return
-            db.delete_campaign(cid)
-            await update.message.reply_text(f"✅ Campaign `{cid}` permanently delete ho gaya hai.", parse_mode=ParseMode.MARKDOWN_V2)
-        except ValueError:
-            await update.message.reply_text("❌ Invalid ID.", parse_mode=ParseMode.MARKDOWN_V2)
         return
 
     # ── Campaign Creation ──
