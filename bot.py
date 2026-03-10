@@ -539,6 +539,8 @@ async def _do_draw(query_or_msg, ctx: ContextTypes.DEFAULT_TYPE, active):
             break
 
     db.set_giveaway_status(active["id"], "ended")
+    for w in winners:
+        db.set_winner(active["id"], w["user_id"])
 
     # Build winner announcement
     lines = [
@@ -1114,39 +1116,45 @@ async def user_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = query.from_user
     action = query.data.split(":")[1]
 
-    if action == "join":
-        if query.message.chat.type == "private":
-            await _start_join_flow(user, query.message.chat, ctx)
-        else:
-            bot_info = await ctx.bot.get_me()
-            await query.answer(
-                f"Bot ko private mein open karo!",
-                show_alert=True,
-            )
-            # Maybe update the message or send a new one with the link
-            await query.message.reply_text(
-                f"📩 {user_mention(user)}, campaign join karne ke liye mujhe private mein message karo\\!",
-                parse_mode=ParseMode.MARKDOWN_V2,
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🚀 Open Private Chat", url=f"https://t.me/{bot_info.username}?start=join")
-                ]])
-            )
+    if action == "leaderboard":
+        # Get the most recent campaign (active or ended)
+        campaign = db.get_active_giveaway() or db.get_latest_giveaway()
+        if not campaign:
+            await query.answer("Abhi koi campaign nahi mila.", show_alert=True)
+            return
 
-    elif action == "leaderboard":
-        active = db.get_active_giveaway()
-        if not active:
-            await query.answer("Koi active giveaway nahi.", show_alert=True)
-            return
-        board = db.get_referral_leaderboard(active["id"])
+        gid = campaign["id"]
+        status_tag = "🟢 ACTIVE" if campaign["status"] == "active" else "🔴 CLOSED"
+        stats = db.get_analytics(gid)
+        board = db.get_referral_leaderboard(gid)
+        
+        header = (
+            f"🏆 *Leaderboard — Campaign \\#{esc(gid)}*\n"
+            f"🎁 Prize: {esc(campaign['prize'])}\n"
+            f"📊 Status: {status_tag}\n"
+            f"👥 Total Joined: `{stats['total']}`\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+        )
+        
+        lines = [header]
         if not board:
-            await query.answer("Abhi koi referrals nahi.", show_alert=True)
-            return
-        lines = [f"🏆 *Referral Leaderboard*\n"]
-        medals = ["🥇", "🥈", "🥉"]
-        for i, row in enumerate(board):
-            medal = medals[i] if i < 3 else f"{i+1}\\."
-            uname = f"@{esc(row['uname'])}" if row["uname"] else f"ID:{esc(row['referrer_id'])}"
-            lines.append(f"{medal} {uname} — `{row['ref_count']}` refs")
+            lines.append("_Abhi koi referrals nahi hain\\._")
+        else:
+            medals = ["🥇", "🥈", "🥉"]
+            for i, row in enumerate(board):
+                medal = medals[i] if i < 3 else f"{i+1}\\."
+                uname = f"@{esc(row['uname'])}" if row["uname"] else f"ID:{esc(row['referrer_id'])}"
+                lines.append(f"{medal} {uname} — `{row['ref_count']}` refs")
+        
+        # If it's closed, show winners too
+        if campaign["status"] != "active":
+            winners = db.get_winners(gid)
+            if winners:
+                lines.append(f"\n🌟 *Winning Result:*")
+                for w in winners:
+                    un = f"@{esc(w['telegram_username'])}" if w["telegram_username"] else f"ID:{code_esc(w['user_id'])}"
+                    lines.append(f"🏆 {un}")
+
         await query.edit_message_text(
             "\n".join(lines),
             parse_mode=ParseMode.MARKDOWN_V2,
@@ -1154,23 +1162,35 @@ async def user_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
     elif action == "mystats":
-        active = db.get_active_giveaway()
-        if not active:
-            await query.answer("Koi active giveaway nahi.", show_alert=True)
+        campaign = db.get_active_giveaway() or db.get_latest_giveaway()
+        if not campaign:
+            await query.answer("Koi campaign nahi mila.", show_alert=True)
             return
-        entry   = db.get_entry_by_user(active["id"], user.id)
-        ref_cnt = db.count_referrals(active["id"], user.id)
+        
+        gid   = campaign["id"]
+        entry = db.get_entry_by_user(gid, user.id)
+        ref_cnt = db.count_referrals(gid, user.id)
         bot_info = await ctx.bot.get_me()
         ref_link = f"https://t\\.me/{bot_info.username}?start=ref_{user.id}"
-        status_icon = {"pending": "⏳", "approved": "✅", "rejected": "❌"}.get(
-            entry["status"] if entry else "", "➖"
-        )
+        
+        status_label = entry["status"] if entry else "Not joined"
+        status_icon = {"pending": "⏳", "approved": "✅", "rejected": "❌"}.get(status_label, "➖")
+        
+        winner_msg = ""
+        if entry and entry["is_winner"]:
+            winner_msg = "\n\n🎊 *CONGRATULATIONS\\! TU JEET GAYA HAI\\!* 🎉"
+        elif campaign["status"] != "active" and entry:
+            winner_msg = "\n\n😔 Iss baar luck nahi chala, try again next time\\!"
+
         msg = (
-            f"📊 *My Stats*\n\n"
-            f"Entry Status: {status_icon} {esc(entry['status'] if entry else 'Not joined')}\n"
+            f"📊 *My Stats — Campaign \\#{esc(gid)}*\n"
+            f"🎁 Prize: {esc(campaign['prize'])}\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"Status: {status_icon} {esc(status_label.upper())}\n"
             f"🔗 Referrals: `{ref_cnt}`\n"
-            f"⚡ Priority Boost: {'Yes' if entry and entry['priority_boost'] else 'No'}\n\n"
-            f"*Your Referral Link:*\n`{ref_link}`"
+            f"⚡ Priority Boost: {'Yes' if entry and entry['priority_boost'] else 'No'}\n"
+            f"{winner_msg}\n\n"
+            f"*Your Referral Link:*\n`{code_esc(ref_link)}`"
         )
         await query.edit_message_text(
             msg,

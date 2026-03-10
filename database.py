@@ -38,6 +38,7 @@ def init_db():
             photo_file_id    TEXT    NOT NULL,
             status           TEXT    NOT NULL DEFAULT 'pending',
             priority_boost   INTEGER NOT NULL DEFAULT 0,
+            is_winner        INTEGER NOT NULL DEFAULT 0,
             submitted_at     TEXT    NOT NULL,
             UNIQUE(giveaway_id, user_id),
             UNIQUE(giveaway_id, github_username),
@@ -81,6 +82,14 @@ def get_active_giveaway():
     with get_conn() as c:
         return c.execute(
             "SELECT * FROM giveaways WHERE status = 'active' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+
+
+def get_latest_giveaway():
+    """Returns the most recent giveaway (any status)"""
+    with get_conn() as c:
+        return c.execute(
+            "SELECT * FROM giveaways ORDER BY id DESC LIMIT 1"
         ).fetchone()
 
 
@@ -163,6 +172,22 @@ def count_by_status(gid: int, status: str) -> int:
 
 def count_approved(gid: int) -> int:
     return count_by_status(gid, "approved")
+
+
+def set_winner(gid: int, user_id: int):
+    with get_conn() as c:
+        c.execute(
+            "UPDATE entries SET is_winner = 1 WHERE giveaway_id = ? AND user_id = ?",
+            (gid, user_id)
+        )
+
+
+def get_winners(gid: int):
+    with get_conn() as c:
+        return c.execute(
+            "SELECT * FROM entries WHERE giveaway_id = ? AND is_winner = 1",
+            (gid,)
+        ).fetchall()
 
 
 # ── Referrals ────────────────────────────────
